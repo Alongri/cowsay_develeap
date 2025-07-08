@@ -4,25 +4,27 @@ on:
   push:
     branches:
       - main
-
 jobs:
   build_and_package_application:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Check out code
-      uses: actions/checkout@v3
+    - name: Check out code 
+      uses: actions/checkout@v2
+      # Allow the runner to check out the source code from the repository.
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
 
     - name: Build Docker image
-      run: docker build -t cowsay-project .
-
+      run: docker buildx build --load --tag cowsay-app:latest .
+    
     - name: Run Docker container
-      run: docker run -d -p 8080:8080 --name cowsay-container cowsay-project
+      run:  docker run -d -p 8080:8080 cowsay-app:latest
 
-    - name: Wait for app to start
+    - name: Check application
       run: sleep 5
 
-    - name: Test the application
+    - name: Check application
       run: curl http://localhost:8080
 
     - name: Configure AWS credentials
