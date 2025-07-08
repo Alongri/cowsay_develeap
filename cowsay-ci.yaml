@@ -25,3 +25,17 @@ jobs:
     - name: Test the application
       run: curl http://localhost:8080
 
+    - name: Configure AWS credentials
+      run: aws configure set aws_access_key_id ${{ secrets.ECR_ACCESS_KEY }} && aws configure set aws_secret_access_key ${{ secrets.ECR_SECRET_KEY }} && aws configure set region ap-south-1
+    
+    - name: Authenticate Docker to AWS ECR
+      run: aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 884394270539.dkr.ecr.ap-south-1.amazonaws.com
+      # Authenticates Docker to AWS ECR using the AWS CLI.
+    
+    - name: Tag Docker image
+      run: docker tag development/cowsay-app:latest 884394270539.dkr.ecr.ap-south-1.amazonaws.com/development/cowsay-app:latest
+      # Tags the Docker image for the ECR repository.
+    
+    - name: Push Docker image to ECR
+      run: docker push 884394270539.dkr.ecr.ap-south-1.amazonaws.com/development/cowsay-app:latest
+      # Pushes the Docker image to the specified ECR repository.
