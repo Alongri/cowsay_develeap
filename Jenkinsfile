@@ -17,10 +17,10 @@ pipeline {
         stage('Docker Build') {
             steps {
                 echo 'Building Docker image (includes npm install)...'
-                sh '''
-                    docker build -t ${APP_NAME}:${BUILD_NUMBER} .
-                    docker tag ${APP_NAME}:${BUILD_NUMBER} ${APP_NAME}:latest
-                    echo "Docker image built successfully"
+                powershell '''
+                    docker build -t ${env:APP_NAME}:${env:BUILD_NUMBER} .
+                    docker tag ${env:APP_NAME}:${env:BUILD_NUMBER} ${env:APP_NAME}:latest
+                    Write-Host "Docker image built successfully"
                 '''
             }
         }
@@ -28,47 +28,59 @@ pipeline {
         stage('Test') {
             steps {
                 echo 'Running tests on Docker container...'
-                sh '''
+                powershell '''
                     # Start container in background
-                    CONTAINER_ID=$(docker run -d -p 8080:8080 ${APP_NAME}:latest)
-                    echo "Container started with ID: $CONTAINER_ID"
+                    $containerId = docker run -d -p 8080:8080 ${env:APP_NAME}:latest
+                    Write-Host "Container started with ID: $containerId"
                     
                     # Wait for application to start
-                    sleep 5
+                    Start-Sleep -Seconds 5
                     
                     # Test if application is responding
-                    echo "Testing application endpoint..."
-                    if curl -f http://localhost:8080 > /dev/null 2>&1; then
-                        echo "✓ Application is responding successfully"
-                    else
-                        echo "ERROR: Application is not responding"
-                        docker logs $CONTAINER_ID
-                        docker stop $CONTAINER_ID
-                        docker rm $CONTAINER_ID
+                    Write-Host "Testing application endpoint..."
+                    try {
+                        $response = Invoke-WebRequest -Uri "http://localhost:8080" -Method Get -TimeoutSec 10 -UseBasicParsing
+                        if ($response.StatusCode -eq 200) {
+                            Write-Host "✓ Application is responding successfully"
+                        } else {
+                            throw "Application returned status code: $($response.StatusCode)"
+                        }
+                    } catch {
+                        Write-Host "ERROR: Application is not responding"
+                        Write-Host $_.Exception.Message
+                        docker logs $containerId
+                        docker stop $containerId
+                        docker rm $containerId
                         exit 1
-                    fi
+                    }
                     
                     # Test with a custom text parameter
-                    echo "Testing custom text endpoint..."
-                    if curl -f http://localhost:8080/hello > /dev/null 2>&1; then
-                        echo "✓ Custom text endpoint working"
-                    else
-                        echo "WARNING: Custom text endpoint test failed"
-                    fi
+                    Write-Host "Testing custom text endpoint..."
+                    try {
+                        $response = Invoke-WebRequest -Uri "http://localhost:8080/hello" -Method Get -TimeoutSec 10 -UseBasicParsing
+                        if ($response.StatusCode -eq 200) {
+                            Write-Host "✓ Custom text endpoint working"
+                        } else {
+                            Write-Host "WARNING: Custom text endpoint returned status code: $($response.StatusCode)"
+                        }
+                    } catch {
+                        Write-Host "WARNING: Custom text endpoint test failed: $($_.Exception.Message)"
+                    }
                     
                     # Verify container is running properly
-                    if docker ps | grep -q $CONTAINER_ID; then
-                        echo "✓ Container is running"
-                    else
-                        echo "ERROR: Container stopped unexpectedly"
-                        docker logs $CONTAINER_ID
+                    $runningContainers = docker ps --format "{{.ID}}"
+                    if ($runningContainers -contains $containerId) {
+                        Write-Host "✓ Container is running"
+                    } else {
+                        Write-Host "ERROR: Container stopped unexpectedly"
+                        docker logs $containerId
                         exit 1
-                    fi
+                    }
                     
                     # Clean up
-                    docker stop $CONTAINER_ID
-                    docker rm $CONTAINER_ID
-                    echo "All tests passed successfully"
+                    docker stop $containerId
+                    docker rm $containerId
+                    Write-Host "All tests passed successfully"
                 '''
             }
         }
@@ -83,9 +95,14 @@ pipeline {
         }
         always {
             echo 'Cleaning up...'
-            sh '''
+            powershell '''
                 # Clean up any running containers
-                docker ps -a | grep ${APP_NAME} | awk '{print $1}' | xargs -r docker rm -f || true
+                $containers = docker ps -a --filter "name=${env:APP_NAME}" --format "{{.ID}}"
+                if ($containers) {
+                    foreach ($container in $containers) {
+                        docker rm -f $container 2>&1 | Out-Null
+                    }
+                }
             '''
         }
     }
